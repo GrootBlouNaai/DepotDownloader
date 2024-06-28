@@ -1,55 +1,55 @@
-# steam仓库清单文件下载
+# Steam Manifest File Download
 
-## 全局参数
+## Global Parameters
 
-* `-t, --thread-num`: 线程数(默认32)
-* `-o, --save-path`: 下载路径
-* `-s, --server`: 指定cdn下载,可指定多个或`,`分隔
-* `-l, --level`: 日志等级
-* `-r, --retry-num`: 重试次数(默认3)
+* `-t, --thread-num`: Number of threads (default 32)
+* `-o, --save-path`: Download path
+* `-s, --server`: Specify CDN for download, can specify multiple or separate with commas
+* `-l, --level`: Log level
+* `-r, --retry-num`: Number of retries (default 3)
 
-## 子命令参数
+## Subcommand Parameters
 
-* `app`: 下载全部清单
-    * `-p, --app-path`: 清单目录
-        * [目录结构](https://github.com/wxy1343/ManifestAutoUpdate/tree/10)
-            * `*.manifest`: 清单文件
-            * `config.vdf`: 密钥文件
-* `depot`: 单独下载清单
-    * `-m, --manifest-path`: 清单文件路径,可指定多个或`空格`分隔
-    * `-k, --depot-key`: 仓库密钥,可指定多个或`空格`分隔
+* `app`: Download all manifests
+    * `-p, --app-path`: Manifest directory
+        * [Directory Structure](https://github.com/wxy1343/ManifestAutoUpdate/tree/10)
+            * `*.manifest`: Manifest files
+            * `config.vdf`: Key files
+* `depot`: Download individual manifests
+    * `-m, --manifest-path`: Manifest file path, can specify multiple or separate with spaces
+    * `-k, --depot-key`: Depot key, can specify multiple or separate with spaces
 
-## 使用示例
+## Usage Examples
 
 * `python main.py app --app-path ./10`
 * `python main.py depot --manifest-path "368010_6622130648560741481.manifest" --depot-key ef8ea30154f995c4e4226df06f5cc39705ef0fc2d800f948613d1b3dd6b6437e`
 
-## 下载加速
+## Download Acceleration
 
-1. 指定cdn下载
-    * 使用示例：`python main.py -s https://google.cdn.steampipe.steamcontent.com {app,depot} ...`
-    * 指定多个用`,`分开,或者指定多个`-s`
-    * cdn列表
-        * google
+1. Specify CDN for download
+    * Usage example: `python main.py -s https://google.cdn.steampipe.steamcontent.com {app,depot} ...`
+    * Specify multiple with commas, or use multiple `-s`
+    * CDN List
+        * Google
             * `https://google.cdn.steampipe.steamcontent.com`
             * `https://google2.cdn.steampipe.steamcontent.com`
-        * level3
+        * Level3
             * `https://level3.cdn.steampipe.steamcontent.com`
-        * akamai
+        * Akamai
             * `https://steampipe.akamaized.net`
             * `https://steampipe-kr.akamaized.net`
             * `https://steampipe-partner.akamaized.net`
-        * 金山云
+        * Kingsoft Cloud
             * `http://dl.steam.clngaa.com`
-        * 白山云
+        * BaishanCloud
             * `http://st.dl.eccdnx.com`
             * `http://st.dl.bscstorage.net`
             * `http://trts.baishancdnx.cn`
 
-2. 使用工具：[UsbEAm Hosts Editor](https://www.dogfight360.com/blog/475/)
+2. Use tool: [UsbEAm Hosts Editor](https://www.dogfight360.com/blog/475/)
 
-## 旧清单导入steam运行
+## Importing Old Manifests into Steam
 
-* steam导入旧清单无法下载
-* 使用本工具下载旧清单文件到steam游戏目录
-* 使用[steamtools](https://steamtools.net/)开启`阻止游戏下载与更新`，点击下载完空包即可游玩旧版本
+* Steam cannot download old manifests for import
+* Use this tool to download old manifest files to the Steam game directory
+* Use [steamtools](https://steamtools.net/) to enable `Block Game Downloads and Updates`, then click to download an empty package to play the old version
