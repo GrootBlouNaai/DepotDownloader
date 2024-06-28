@@ -297,70 +297,100 @@ class DepotDownloader:
         self.tqdm.set_description_str(f'Depot {self.depot_id}')
 
     def get_content_server(self, servers=None, rotate=False):
-        if servers:
-            for server_address in servers:
-                with self.lock:
-                    if server_address not in self.servers:
-                        self.log.info('Added server: ' + server_address)
-                        self.servers.append(server_address)
-                    if self.expect_logged_in and server_address not in self.servers_token:
-                        self.update_cdn_token(server_address)
+    """
+    Retrieve a content server and optionally rotate to the next one in the list.
 
-        if not self.servers:
-            self.log.info("Trying to fetch content servers from Steam API")
-            # 获取内容服务器信息
-            content_servers = filter(lambda server: server.type != 'OpenCache',
-                                     get_content_servers_from_webapi(b'0'))
-            # 优先 CDN 服务器
-            sorted_servers = sorted(content_servers, key=lambda server: server.type != 'CDN')
-            # 遍历每个服务器对象，生成服务器地址并获取对应的 CDN 认证令牌
-            for server in sorted_servers:
-                # 生成服务器地址
-                server_address = f"{'https' if server.https else 'http'}://{server.host}:{server.port}"
-                with self.lock:
-                    if server_address not in self.servers:
-                        self.log.info('Added server: ' + server_address)
-                        # 将生成的服务器地址添加到 self.servers 列表中
-                        self.servers.append(server_address)
-                    # 获取 CDN Auth Token
-                    if self.expect_logged_in and server_address not in self.servers_token:
-                        self.update_cdn_token(server_address)
+    This function attempts to fetch a content server from either a provided list of servers or by querying the Steam API.
+    It also handles the retrieval of CDN authentication tokens if the client is expected to be logged in.
 
-        if not self.servers:
-            raise SteamError("Failed to fetch content servers")
+    Args:
+        servers (list, optional): A list of server addresses to use. If provided, these servers will be added to the internal list.
+        rotate (bool, optional): If True, the function will rotate to the next server in the internal list after fetching one.
 
-        if rotate:
-            self.servers.rotate(-1)
+    Returns:
+        tuple: A tuple containing the server address and the CDN authentication token (if applicable).
 
-        server_address = self.servers[0]
-        if self.expect_logged_in:
+    Raises:
+        SteamError: If no content servers can be fetched.
+    """
+    # If a list of servers is provided, add them to the internal list of servers
+    if servers:
+        for server_address in servers:
             with self.lock:
-                cdn_auth_token = self.servers_token[server_address]
-            assert (cdn_auth_token.eresult == EResult.OK)
-            if cdn_auth_token.expiration_time != 0:
-                timeleft = cdn_auth_token.expiration_time - time.time()
-                if timeleft < 60:
-                    try:
-                        with self.lock:
-                            cdn_auth_token = self.update_cdn_token(server_address)
-                    except SteamError:
-                        with self.lock:
-                            for server_address, cdn_auth_token in self.servers_token.items():
-                                if cdn_auth_token.eresult == EResult.OK:
-                                    break
-                            else:
-                                raise
-                elif timeleft < 300:  # 小于5分钟
-                    with self.lock:
-                        if not self.cdn_auth_code_updating:
-                            self.cdn_auth_code_updating = True
-                            gevent.spawn(lambda:
-                                         self.update_cdn_token(server_address) and
-                                         setattr(self, 'cdn_auth_code_updating', False))
+                # Ensure the server is not already in the list
+                if server_address not in self.servers:
+                    self.log.info('Added server: ' + server_address)
+                    self.servers.append(server_address)
+                # If the client is expected to be logged in and the server does not have a token, update the token
+                if self.expect_logged_in and server_address not in self.servers_token:
+                    self.update_cdn_token(server_address)
 
-            return server_address, cdn_auth_token.token
-        else:
-            return server_address, ''
+    # If the internal list of servers is empty, fetch servers from the Steam API
+    if not self.servers:
+        self.log.info("Trying to fetch content servers from Steam API")
+        # Fetch content servers from the Steam API, filtering out OpenCache servers
+        content_servers = filter(lambda server: server.type != 'OpenCache',
+                                 get_content_servers_from_webapi(b'0'))
+        # Sort servers, prioritizing CDN servers
+        sorted_servers = sorted(content_servers, key=lambda server: server.type != 'CDN')
+        for server in sorted_servers:
+            # Construct the server address
+            server_address = f"{'https' if server.https else 'http'}://{server.host}:{server.port}"
+            with self.lock:
+                # Ensure the server is not already in the list
+                if server_address not in self.servers:
+                    self.log.info('Added server: ' + server_address)
+                    self.servers.append(server_address)
+                # If the client is expected to be logged in and the server does not have a token, update the token
+                if self.expect_logged_in and server_address not in self.servers_token:
+                    self.update_cdn_token(server_address)
+
+    # If no servers were fetched, raise an error
+    if not self.servers:
+        raise SteamError("Failed to fetch content servers")
+
+    # If rotation is requested, rotate the internal list of servers
+    if rotate:
+        self.servers.rotate(-1)
+
+    # Get the first server address from the internal list
+    server_address = self.servers[0]
+    # If the client is expected to be logged in, retrieve the CDN authentication token for the server
+    if self.expect_logged_in:
+        with self.lock:
+            cdn_auth_token = self.servers_token[server_address]
+        # Ensure the token is valid
+        assert (cdn_auth_token.eresult == EResult.OK)
+        # If the token has an expiration time, check if it is about to expire
+        if cdn_auth_token.expiration_time != 0:
+            timeleft = cdn_auth_token.expiration_time - time.time()
+            # If the token expires in less than 60 seconds, attempt to update it
+            if timeleft < 60:
+                try:
+                    with self.lock:
+                        cdn_auth_token = self.update_cdn_token(server_address)
+                except SteamError:
+                    with self.lock:
+                        # Find a valid token from the list of servers
+                        for server_address, cdn_auth_token in self.servers_token.items():
+                            if cdn_auth_token.eresult == EResult.OK:
+                                break
+                        else:
+                            raise
+            # If the token expires in less than 5 minutes, schedule an update in the background
+            elif timeleft < 300:  # Less than 5 minutes
+                with self.lock:
+                    if not self.cdn_auth_code_updating:
+                        self.cdn_auth_code_updating = True
+                        gevent.spawn(lambda:
+                                     self.update_cdn_token(server_address) and
+                                     setattr(self, 'cdn_auth_code_updating', False))
+
+        # Return the server address and the CDN authentication token
+        return server_address, cdn_auth_token.token
+    else:
+        # Return the server address without a token
+        return server_address, ''
 
     def save_chunk_dict(self):
         with self.lock:
@@ -409,38 +439,61 @@ class DepotDownloader:
                 self.save_chunk_dict()
 
     def update_cdn_token(self, server_address):
-        retry = 3
-        while True:
-            try:
-                if not self.client.connected:
-                    self.client.anonymous_login()
-                hostname = urlparse(str(server_address)).hostname
-                if hostname.endswith('.steamcontent.com'):
-                    cdn_auth_token = CMsgClientGetCDNAuthTokenResponse()
-                    cdn_auth_token.token = ''
-                    cdn_auth_token.expiration_time = 0
-                    cdn_auth_token.eresult = EResult.OK
-                else:
-                    cdn_auth_token = self.client.get_cdn_auth_token(self.depot_id, hostname)
-                self.log.debug('Server: %s, Token: %s, expiration_time: %s, eresult: %s' % (
-                    server_address,
-                    cdn_auth_token.token,
-                    cdn_auth_token.expiration_time,
-                    EResult(cdn_auth_token.eresult).name
-                ))
-                if cdn_auth_token.eresult == EResult.OK:
-                    self.servers_token[server_address] = cdn_auth_token
-                    break
-                self.log.warning('Failed to get cdn_auth_token: %s, eresult: %s' % (
-                    server_address, EResult(cdn_auth_token.eresult).name))
-            except (NameError, AttributeError, TypeError, RuntimeError) as e:
-                if not retry:
-                    raise SteamError(f'Failed to get cdn_auth_token: {e}')
-                retry -= 1
-                # 如果'cdn_auth_token'为空或者没有.token和.eresult属性
-                self.client.disconnect()
+    """
+    Update the CDN authentication token for a given server address.
+
+    This function attempts to retrieve a new CDN authentication token for the specified server address.
+    It handles retries in case of failure and ensures that the client is logged in before making the request.
+
+    Args:
+        server_address (str): The address of the server for which to update the CDN authentication token.
+
+    Returns:
+        CMsgClientGetCDNAuthTokenResponse: The response object containing the new CDN authentication token.
+
+    Raises:
+        SteamError: If the CDN authentication token cannot be retrieved after multiple retries.
+    """
+    retry = 3  # Number of retries for fetching the CDN token
+    while True:
+        try:
+            # Ensure the client is connected and logged in
+            if not self.client.connected:
                 self.client.anonymous_login()
-        return cdn_auth_token
+            # Extract the hostname from the server address
+            hostname = urlparse(str(server_address)).hostname
+            # Special handling for steamcontent.com domains
+            if hostname.endswith('.steamcontent.com'):
+                cdn_auth_token = CMsgClientGetCDNAuthTokenResponse()
+                cdn_auth_token.token = ''
+                cdn_auth_token.expiration_time = 0
+                cdn_auth_token.eresult = EResult.OK
+            else:
+                # Request a new CDN authentication token from the Steam client
+                cdn_auth_token = self.client.get_cdn_auth_token(self.depot_id, hostname)
+            # Log the details of the token for debugging purposes
+            self.log.debug('Server: %s, Token: %s, expiration_time: %s, eresult: %s' % (
+                server_address,
+                cdn_auth_token.token,
+                cdn_auth_token.expiration_time,
+                EResult(cdn_auth_token.eresult).name
+            ))
+            # If the token is successfully retrieved, store it and break out of the loop
+            if cdn_auth_token.eresult == EResult.OK:
+                self.servers_token[server_address] = cdn_auth_token
+                break
+            # If the token retrieval fails, log a warning and retry
+            self.log.warning('Failed to get cdn_auth_token: %s, eresult: %s' % (
+                server_address, EResult(cdn_auth_token.eresult).name))
+        except (NameError, AttributeError, TypeError, RuntimeError) as e:
+            # Handle specific exceptions that may occur during token retrieval
+            if not retry:
+                raise SteamError(f'Failed to get cdn_auth_token: {e}')
+            retry -= 1
+            # Disconnect and re-login the client before retrying
+            self.client.disconnect()
+            self.client.anonymous_login()
+    return cdn_auth_token
 
 
 def get_manifest_path_depot_key_dict(path):
